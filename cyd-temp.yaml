@@ -1,0 +1,95 @@
+esphome:
+  name: cyd-temp
+
+esp32:
+  board: esp32dev
+
+logger:
+
+api:
+
+ota:
+  - platform: esphome
+
+wifi:
+  ssid: "Cudy-7E84-5G"
+  password: "34098080"
+
+color:
+  - id: my_blue
+    red: 0%
+    green: 0%
+    blue: 100%
+  - id: my_white
+    red: 100%
+    green: 100%
+    blue: 100%
+  - id: my_black
+    red: 0%
+    green: 0%
+    blue: 0%
+
+sensor:
+  - platform: dht
+    pin: GPIO22
+    model: DHT11
+    temperature:
+      name: "Temperature"
+      id: temp_sensor
+    humidity:
+      name: "Humidity"
+      id: humidity_sensor
+    update_interval: 2s
+
+output:
+  - platform: ledc
+    pin: GPIO21
+    id: backlight_pwm
+
+light:
+  - platform: monochromatic
+    output: backlight_pwm
+    name: Display Backlight
+    id: backlight
+    restore_mode: ALWAYS_ON
+
+spi:
+  - id: tft
+    clk_pin: GPIO14
+    mosi_pin: GPIO13
+    miso_pin: GPIO12
+
+display:
+  - platform: ili9xxx
+    model: ILI9341
+    spi_id: tft
+    cs_pin: GPIO15
+    dc_pin: GPIO2
+    color_palette: 8BIT
+    rotation: 90
+    color_order: bgr
+    invert_colors: false
+    dimensions:
+      width: 240
+      height: 320
+    lambda: |-
+      it.fill(my_black);
+      it.printf(160, 100, id(helvetica_24), id(my_white), TextAlign::CENTER, "Temperatura: %.1f C", id(temp_sensor).state);
+      it.printf(160, 140, id(helvetica_24), id(my_white), TextAlign::CENTER, "Vlaznost: %.1f%%", id(humidity_sensor).state);
+
+font:
+  - file: "Helvetica.ttf"
+    id: helvetica_14
+    size: 14
+  - file: "Helvetica.ttf"
+    id: helvetica_16
+    size: 16
+  - file: "Helvetica.ttf"
+    id: helvetica_18
+    size: 12
+  - file: "Helvetica.ttf"
+    id: helvetica_20
+    size: 20
+  - file: "Helvetica.ttf"
+    id: helvetica_24
+    size: 24
