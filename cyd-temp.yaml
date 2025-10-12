@@ -1,10 +1,13 @@
 esphome:
   name: cyd-temp
+  platformio_options:
+    upload_speed: 115200
 
 esp32:
   board: esp32dev
 
 logger:
+  level: DEBUG
 
 api:
 
@@ -29,17 +32,50 @@ color:
     green: 0%
     blue: 0%
 
+uart:
+  id: uart_bus
+  rx_pin: GPIO22
+  baud_rate: 9600
+
 sensor:
-  - platform: dht
-    pin: GPIO22
-    model: DHT11
-    temperature:
-      name: "Temperature"
-      id: temp_sensor
-    humidity:
-      name: "Humidity"
-      id: humidity_sensor
-    update_interval: 2s
+  - platform: template
+    name: "Temperature"
+    id: temp_sensor
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+
+  - platform: template
+    name: "Humidity"
+    id: humidity_sensor
+    unit_of_measurement: "%"
+    accuracy_decimals: 1
+
+interval:
+  - interval: 100ms
+    then:
+      - lambda: |-
+          static String buffer = "";
+          while (id(uart_bus).available()) {
+            uint8_t c;
+            id(uart_bus).read_byte(&c);
+            if (c == '\n') {
+              ESP_LOGD("uart", "Received: %s", buffer.c_str());
+              int t_pos = buffer.indexOf("T:");
+              int h_pos = buffer.indexOf("H:");
+              if (t_pos >= 0 && h_pos >= 0) {
+                String temp_str = buffer.substring(t_pos + 2, buffer.indexOf(',', t_pos));
+                String hum_str = buffer.substring(h_pos + 2);
+                float temp = temp_str.toFloat();
+                float hum = hum_str.toFloat();
+                id(temp_sensor).publish_state(temp);
+                id(humidity_sensor).publish_state(hum);
+                ESP_LOGD("uart", "Temp: %.1f, Humidity: %.1f", temp, hum);
+              }
+              buffer = "";
+            } else if (c != '\r') {
+              buffer += (char)c;
+            }
+          }
 
 output:
   - platform: ledc
