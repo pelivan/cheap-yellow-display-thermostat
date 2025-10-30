@@ -31,10 +31,19 @@ color:
     red: 0%
     green: 0%
     blue: 0%
+  - id: my_green
+    red: 0%
+    green: 100%
+    blue: 0%
+  - id: my_red
+    red: 100%
+    green: 0%
+    blue: 0%
 
 uart:
   id: uart_bus
   rx_pin: GPIO22
+  tx_pin: GPIO27 # Added TX pin for sending commands
   baud_rate: 9600
 
 sensor:
@@ -49,6 +58,12 @@ sensor:
     id: humidity_sensor
     unit_of_measurement: "%"
     accuracy_decimals: 1
+
+globals:
+  - id: fan_speed
+    type: int
+    restore_value: no
+    initial_value: "0"
 
 interval:
   - interval: 100ms
@@ -94,9 +109,33 @@ spi:
     clk_pin: GPIO14
     mosi_pin: GPIO13
     miso_pin: GPIO12
+  - id: touch_spi # Add separate SPI for touch
+    clk_pin: GPIO25
+    mosi_pin: GPIO32
+    miso_pin: GPIO39
+
+# Touchscreen using XPT2046
+touchscreen:
+  - platform: xpt2046
+    id: my_touchscreen
+    spi_id: touch_spi # Use the touch SPI bus
+    cs_pin: GPIO33
+    interrupt_pin: GPIO36
+    update_interval: 50ms
+    calibration:
+      x_min: 200
+      x_max: 3700
+      y_min: 240
+      y_max: 3800
+    transform:
+      swap_xy: true
+    on_touch:
+      - lambda: |-
+          ESP_LOGI("TOUCH_RAW", "Touch at x=%d, y=%d", touch.x, touch.y);
 
 display:
   - platform: ili9xxx
+    id: my_display
     model: ILI9341
     spi_id: tft
     cs_pin: GPIO15
@@ -109,9 +148,125 @@ display:
       width: 240
       height: 320
     lambda: |-
+      // Background
       it.fill(my_black);
-      it.printf(160, 100, id(helvetica_24), id(my_white), TextAlign::CENTER, "Temperatura: %.1f C", id(temp_sensor).state);
-      it.printf(160, 140, id(helvetica_24), id(my_white), TextAlign::CENTER, "Vlaznost: %.1f%%", id(humidity_sensor).state);
+
+      // Temperature and Humidity display
+      it.printf(160, 40, id(helvetica_24), id(my_white), TextAlign::CENTER, "Temperatura: %.1f C", id(temp_sensor).state);
+      it.printf(160, 80, id(helvetica_24), id(my_white), TextAlign::CENTER, "Vlaznost: %.1f%%", id(humidity_sensor).state);
+
+      // Fan speed buttons
+      int button_y = 150;
+      int button_width = 90;
+      int button_height = 60;
+      int spacing = 10;
+
+      // Button 1 - Low Speed
+      Color btn1_color = (id(fan_speed) == 1) ? id(my_green) : id(my_blue);
+      it.filled_rectangle(10, button_y, button_width, button_height, btn1_color);
+      it.rectangle(10, button_y, button_width, button_height, id(my_white));
+      it.printf(55, button_y + 30, id(helvetica_20), id(my_white), TextAlign::CENTER, "LOW");
+
+      // Button 2 - Medium Speed
+      Color btn2_color = (id(fan_speed) == 2) ? id(my_green) : id(my_blue);
+      it.filled_rectangle(115, button_y, button_width, button_height, btn2_color);
+      it.rectangle(115, button_y, button_width, button_height, id(my_white));
+      it.printf(160, button_y + 30, id(helvetica_20), id(my_white), TextAlign::CENTER, "MED");
+
+      // Button 3 - High Speed
+      Color btn3_color = (id(fan_speed) == 3) ? id(my_green) : id(my_blue);
+      it.filled_rectangle(220, button_y, button_width, button_height, btn3_color);
+      it.rectangle(220, button_y, button_width, button_height, id(my_white));
+      it.printf(265, button_y + 30, id(helvetica_20), id(my_white), TextAlign::CENTER, "HIGH");
+
+      // OFF Button
+      Color btn_off_color = (id(fan_speed) == 0) ? id(my_green) : id(my_red);
+      it.filled_rectangle(10, button_y + 80, 300, 50, btn_off_color);
+      it.rectangle(10, button_y + 80, 300, 50, id(my_white));
+      it.printf(160, button_y + 105, id(helvetica_20), id(my_white), TextAlign::CENTER, "OFF");
+
+binary_sensor:
+  - platform: touchscreen
+    touchscreen_id: my_touchscreen
+    id: button_low
+    x_min: 10
+    x_max: 100
+    y_min: 150
+    y_max: 210
+    on_press:
+      then:
+        - lambda: |-
+            if (id(fan_speed) == 1) {
+              ESP_LOGI("TOUCH", "LOW button toggled OFF");
+              id(fan_speed) = 0;
+              id(uart_bus).write_str("0\n");
+            } else {
+              ESP_LOGI("TOUCH", "LOW button pressed");
+              id(fan_speed) = 1;
+              id(uart_bus).write_str("1\n");
+            }
+            id(uart_bus).flush();
+        - component.update: my_display
+
+  - platform: touchscreen
+    touchscreen_id: my_touchscreen
+    id: button_med
+    x_min: 115
+    x_max: 205
+    y_min: 150
+    y_max: 210
+    on_press:
+      then:
+        - lambda: |-
+            if (id(fan_speed) == 2) {
+              ESP_LOGI("TOUCH", "MED button toggled OFF");
+              id(fan_speed) = 0;
+              id(uart_bus).write_str("0\n");
+            } else {
+              ESP_LOGI("TOUCH", "MED button pressed");
+              id(fan_speed) = 2;
+              id(uart_bus).write_str("2\n");
+            }
+            id(uart_bus).flush();
+        - component.update: my_display
+
+  - platform: touchscreen
+    touchscreen_id: my_touchscreen
+    id: button_high
+    x_min: 220
+    x_max: 310
+    y_min: 150
+    y_max: 210
+    on_press:
+      then:
+        - lambda: |-
+            if (id(fan_speed) == 3) {
+              ESP_LOGI("TOUCH", "HIGH button toggled OFF");
+              id(fan_speed) = 0;
+              id(uart_bus).write_str("0\n");
+            } else {
+              ESP_LOGI("TOUCH", "HIGH button pressed");
+              id(fan_speed) = 3;
+              id(uart_bus).write_str("3\n");
+            }
+            id(uart_bus).flush();
+        - component.update: my_display
+
+  - platform: touchscreen
+    touchscreen_id: my_touchscreen
+    id: button_off
+    x_min: 10
+    x_max: 310
+    y_min: 230
+    y_max: 280
+    on_press:
+      then:
+        - lambda: |-
+            ESP_LOGI("TOUCH", "OFF button pressed");
+            id(fan_speed) = 0;
+            id(uart_bus).write_str("0\n");
+            id(uart_bus).flush();
+        - component.update: my_display
 
 font:
   - file: "Helvetica.ttf"
